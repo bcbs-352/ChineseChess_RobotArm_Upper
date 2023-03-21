@@ -32,6 +32,8 @@ private:
     QSerialPort*my_serial;
     cv::Mat img;
 
+    QGamepad gamePad;
+
 private slots:
     void GetSerialPort();
     void OpenSerialPort();
