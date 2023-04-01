@@ -122,6 +122,7 @@ void MainWindow::ReadImgFile()
     ui->label_origin_img->setPixmap(qPixmap.scaled(ui->label_origin_img->size()));
 
     img = cv::imread(imgPath.toStdString());
+    qDebug()<<"图像尺寸"<<img.cols<<"×"<<img.rows;
 }
 
 

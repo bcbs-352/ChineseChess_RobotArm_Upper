@@ -10,9 +10,11 @@ public:
 
     static cv::Mat SplitChessBoard(const cv::Mat img);
 
-    static int CalMatOTSU(cv::Mat &img);
+    static int CalcMatOTSU(cv::Mat &img);
 
-    static std::vector<cv::Vec3f> GetCicles(const cv::Mat &img);
+    static std::vector<cv::Vec3f> GetCirclesPos(const cv::Mat &img);
+
+    static std::vector<cv::Mat> GetCirclesImg(const cv::Mat &img,std::vector<cv::Vec3f> &circles);
 };
 
 

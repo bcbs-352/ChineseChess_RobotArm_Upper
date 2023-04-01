@@ -41,26 +41,38 @@ QImage ImgProcessing::Mat2QImage(const cv::Mat &img)
     }
 }
 
+// 对Rotated矩形四个点排序(左上、右上、右下、左下)
 void SortRotatedRectPoints(cv::Point2f vetPoints[], cv::RotatedRect rect)
 {
     rect.points(vetPoints);
     cv::Point2f curpoint;
-    if (rect.angle < 0)
-    {
+    //按X轴排序
+    for (int i = 0; i < 4; ++i) {
+        for (int k = i + 1; k < 4; ++k) {
+            if (vetPoints[i].x > vetPoints[k].x) {
+                curpoint = vetPoints[i];
+                vetPoints[i] = vetPoints[k];
+                vetPoints[k] = curpoint;
+            }
+        }
+    }
+    //判断X坐标前两个定义左上左下角
+    if (vetPoints[0].y > vetPoints[1].y) {
         curpoint = vetPoints[0];
-        vetPoints[0] = vetPoints[2];
-        vetPoints[2] = curpoint;
-        curpoint = vetPoints[1];
+        vetPoints[0] = vetPoints[1];
         vetPoints[1] = vetPoints[3];
         vetPoints[3] = curpoint;
     }
-    else if (rect.angle > 0)
-    {
-        curpoint = vetPoints[0];
-        vetPoints[0] = vetPoints[1];
+    else {
+        curpoint = vetPoints[3];
+        vetPoints[3] = vetPoints[1];
+        vetPoints[1] = curpoint;
+    }
+    //判断X坐标后两个定义右上右下角
+    if (vetPoints[1].y > vetPoints[2].y) {
+        curpoint = vetPoints[1];
         vetPoints[1] = vetPoints[2];
-        vetPoints[2] = vetPoints[3];
-        vetPoints[3] = curpoint;
+        vetPoints[2] = curpoint;
     }
 }
 
@@ -119,14 +131,14 @@ cv::Mat ImgProcessing::SplitChessBoard(const cv::Mat inImg)
     // <del>直方图均衡化</del> 大津法获取分割阈值，Canny算子边缘检测
     int threshold;
     //cv::equalizeHist(channels[0],channels[0]);
-    threshold=CalMatOTSU(channels[0]);
+    threshold=CalcMatOTSU(channels[0]);
     cv::Canny(channels[0],B_img,threshold/2,cv::saturate_cast<uchar>(1.3*threshold));
-    threshold=CalMatOTSU(channels[1]);
+    threshold=CalcMatOTSU(channels[1]);
     cv::Canny(channels[1],G_img,threshold/2,cv::saturate_cast<uchar>(1.3*threshold));
-    threshold=CalMatOTSU(channels[2]);
+    threshold=CalcMatOTSU(channels[2]);
     cv::Canny(channels[2],R_img,threshold/2,cv::saturate_cast<uchar>(1.3*threshold));
 
-    threshold=CalMatOTSU(gray_img);
+    threshold=CalcMatOTSU(gray_img);
     cv::Canny(gray_img,gray_img,threshold/2,cv::saturate_cast<uchar>(1.3*threshold));
 
     DrawHoughLine(B_img,0);DrawHoughLine(G_img,0);DrawHoughLine(R_img,0);
@@ -194,7 +206,7 @@ cv::Mat ImgProcessing::SplitChessBoard(const cv::Mat inImg)
     SortRotatedRectPoints(vertices, boundingRect);
     for (int k = 0; k < 4; ++k)
     {
-        line(out, vertices[k], vertices[(k + 1) % 4], cv::Scalar(255, 0, 0),3);
+        line(out, vertices[k], vertices[(k + 1) % 4], cv::Scalar(255, 0, 0),5);
     }
 
     // 获取轮廓点列表中距离外接矩形边角最近的4个点，并绘制该4点围成的多边形
@@ -202,29 +214,39 @@ cv::Mat ImgProcessing::SplitChessBoard(const cv::Mat inImg)
     GetContourCorner(nearPoints,vertices,contours[maxAreaIndex]);
     for (int k = 0; k < 4; ++k)
     {
-        line(out, nearPoints[k], nearPoints[(k + 1) % 4], cv::Scalar(255, 255, 0),3);
+        line(out, nearPoints[k], nearPoints[(k + 1) % 4], cv::Scalar(0, 0, 255),1);
     }
 
     // 计算目标矩形坐标点
     cv::Point2f rectPoints[4];
     float width=CalPointsDistance(vertices[0],vertices[1]);
     float height=CalPointsDistance(vertices[1],vertices[2]);
-    rectPoints[0]=cv::Point2f(nearPoints[0].x,nearPoints[0].y);
+    //rectPoints[0]=cv::Point2f(nearPoints[0].x,nearPoints[0].y);
+    rectPoints[0]=cv::Point2f(vertices[0].x,vertices[0].y);
     rectPoints[1]=rectPoints[0]+cv::Point2f(width,0);
     rectPoints[2]=rectPoints[1]+cv::Point2f(0,height);
     rectPoints[3]=rectPoints[0]+cv::Point2f(0,height);
+    for (int k = 0; k < 4; ++k)
+    {
+        line(out, rectPoints[k], rectPoints[(k + 1) % 4], cv::Scalar(0, 255, 255),3);
+    }
+    cv::imshow("rect img",out);
 
     // 计算透视变换矩阵
     cv::Mat transformImg;
     cv::Mat transformMat=cv::getPerspectiveTransform(nearPoints,rectPoints);
     cv::warpPerspective(img,transformImg,transformMat,transformImg.size(),cv::INTER_LINEAR);
-    imshow("perspect img",transformImg);
+    //imshow("perspect img",transformImg);
 
     // 裁切棋盘图像
-    cv::Mat cutImg=transformImg(cv::Rect(rectPoints[0],rectPoints[2]));
-    //imshow("棋盘图像",cutImg);
+    qDebug()<<"裁切区域:"<<rectPoints[0].x<<","<<rectPoints[0].y<<"  "<<rectPoints[2].x<<","<<rectPoints[2].y;
+    //cv::Mat cutImg=transformImg(cv::Rect(rectPoints[0],rectPoints[2]));
+    cv::Mat cutImg=transformImg(cv::Rect(rectPoints[0]-cv::Point2f(width*0.05,height*0.05),rectPoints[2]+cv::Point2f(width*0.05,height*0.05)));
+    //cv::imshow("cut img",cutImg);
 
-    GetCicles(cutImg);
+    std::vector<cv::Vec3f> circles = GetCirclesPos(cutImg);
+    GetCirclesImg(cutImg,circles);
+
     /*
     // 绘制所有矩形
     for (size_t i = 0; i < contours.size(); i++)
@@ -240,12 +262,12 @@ cv::Mat ImgProcessing::SplitChessBoard(const cv::Mat inImg)
     }
     */
 
-    cv::imshow("imgContour",out);
+    //cv::imshow("imgContour",out);
     return out;
 }
 
 // 最大类间方差法(大津OTSU法)求自适应分割阈值
-int ImgProcessing::CalMatOTSU(cv::Mat &img)
+int ImgProcessing::CalcMatOTSU(cv::Mat &img)
 {
     if(img.channels()>1)
         return 128;
@@ -298,17 +320,27 @@ int ImgProcessing::CalMatOTSU(cv::Mat &img)
     return retVal;
 }
 
-std::vector<cv::Vec3f> ImgProcessing::GetCicles(const cv::Mat &img)
+// 对图像进行霍夫圆检测，返回检测到的circles
+std::vector<cv::Vec3f> ImgProcessing::GetCirclesPos(const cv::Mat &img)
 {
+    // 预处理:滤波(中值/高斯),转为灰度图,获取分割阈值
     std::vector<cv::Vec3f> circles;
-    cv::Mat tmp(img),tmp_gray;
+    cv::Mat tmp,tmp_gray;
+    img.copyTo(tmp);
     cv::medianBlur(tmp,tmp,1);
     cv::cvtColor(tmp,tmp_gray,cv::COLOR_BGR2GRAY);
-    //cv::imshow("gray",tmp_gray);
 
-    int threshold=CalMatOTSU(tmp_gray);
+    int threshold=CalcMatOTSU(tmp_gray);
 
-    cv::HoughCircles(tmp_gray,circles,cv::HOUGH_GRADIENT,2,16,threshold,100,8,35);
+    double dp=2,minDist=20;
+    double param=80; // 检测阶段圆心的累加器阈值。值越小，越可以检测到更多不存在的圆
+    int minRadius=10,maxRadius=30;
+    //do{
+        circles.clear();
+        cv::HoughCircles(tmp_gray,circles,cv::HOUGH_GRADIENT,dp,minDist,threshold,param,minRadius,maxRadius);
+        qDebug()<<circles.size()<<"param:"<<param;
+    //}while(circles.size()>32);
+
     for(size_t i=0;i<circles.size();++i)
     {
         cv::circle(tmp,cv::Point(circles[i][0],circles[i][1]),circles[i][2],cv::Scalar(0,255,0),2,8);
@@ -317,6 +349,29 @@ std::vector<cv::Vec3f> ImgProcessing::GetCicles(const cv::Mat &img)
     cv::imshow("Hough Circle",tmp);
 
     return circles;
+}
+
+// 截取圆形区域图像，并resize
+std::vector<cv::Mat> ImgProcessing::GetCirclesImg(const cv::Mat &inImg, std::vector<cv::Vec3f> &circles)
+{
+    std::vector<cv::Mat> circleImgs;
+    for(size_t i=0;i<circles.size();++i)
+    {
+        cv::Mat img;
+        cv::Mat mask=cv::Mat::zeros(inImg.size(),CV_8UC3);
+        cv::circle(mask,cv::Point(circles[i][0],circles[i][1]),circles[i][2],cv::Scalar(255,255,255),-1);
+        inImg.copyTo(img,mask);
+        cv::Point2f upleft(circles[i][0]-1.1*circles[i][2],circles[i][1]-1.1*circles[i][2]);
+        cv::Point2f lowright(circles[i][0]+1.1*circles[i][2],circles[i][1]+1.1*circles[i][2]);
+        cv::Mat cutImg=img(cv::Rect(upleft,lowright));
+
+        cv::resize(cutImg,cutImg,cv::Size(64,64),0,0,cv::INTER_CUBIC);
+        circleImgs.push_back(cutImg);
+        //cv::imshow("im:"+std::to_string(i),cutImg);
+
+        //cv::imwrite("C:\\Users\\asus\\Desktop\\ChessDataset\\origin\\64x_"+std::to_string(i)+".jpeg",cutImg);
+    }
+    return circleImgs;
 }
 
 
