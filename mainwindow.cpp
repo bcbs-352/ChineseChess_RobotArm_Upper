@@ -36,7 +36,8 @@ MainWindow::MainWindow(QWidget *parent)
     // 图像处理相关绑定
     connect(ui->btn_select_img_path,&QPushButton::clicked,this,&MainWindow::ReadImgFile);
     connect(ui->btn_test_img,&QPushButton::clicked,this,[=](){
-        ImgProcessing::SplitChessBoard(img);
+        //ImgProcessing::SplitChessBoard(img);
+        ImgProcessing::MainFunc(img);
     });
 }
 
