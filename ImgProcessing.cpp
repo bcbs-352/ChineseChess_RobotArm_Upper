@@ -475,7 +475,8 @@ void WriteChess(const Mat &inImg, vector<Vec3f> &circlesPos, vector<int> &chessC
     vector<string> chess_list = {"shi", "shi", "xiang", "xiang", "pao", "pao", "jiang", "shuai", "ma", "ma", "zu", "bing", "che", "che"};
     for(size_t i=0;i<circlesPos.size();++i)
     {
-        cv::putText(dst,chess_list[chessCategories[i]],Point2f(circlesPos[i][0]-32,circlesPos[i][1]),FONT_HERSHEY_SIMPLEX,1,Scalar(0,0,255),2);
+        Scalar textColor = chessCategories[i]%2 == 0 ? Scalar(0,0,0) : Scalar(0,0,255);
+        cv::putText(dst,chess_list[chessCategories[i]],Point2f(circlesPos[i][0]-32,circlesPos[i][1]),FONT_HERSHEY_SIMPLEX,1,textColor,2);
     }
     imshow("dst",dst);
 }

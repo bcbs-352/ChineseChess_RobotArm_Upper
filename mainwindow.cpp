@@ -2,6 +2,9 @@
 #include "ui_mainwindow.h"
 #include "SerialController.h"
 
+#define H 720
+#define W 1280
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
@@ -10,6 +13,18 @@ MainWindow::MainWindow(QWidget *parent)
     my_serial=new QSerialPort(this);
 
     ui->label_port_status->setFont(QFont("Microsoft YaHei", 10,16));
+
+    tcpSocket = new QTcpSocket();
+
+    // Socket相关绑定
+    //connect(tcpSocket,SIGNAL(readyRead()),this,SLOT(OnSocketReadyRead()));
+    connect(ui->btn_open_socket,&QPushButton::clicked,this,[&](){
+        tcpSocket->connectToHost("127.0.0.1",8088);
+        qDebug()<<"建立TcpSocket连接";
+    });
+    connect(this->tcpSocket,&QTcpSocket::readyRead,this,[=](){
+        OnSocketReadyRead();
+    });
 
     // 串口相关绑定
     connect(ui->btn_refresh_serial,&QPushButton::clicked,this,&MainWindow::GetSerialPort);
@@ -124,6 +139,36 @@ void MainWindow::ReadImgFile()
 
     img = cv::imread(imgPath.toStdString());
     qDebug()<<"图像尺寸"<<img.cols<<"×"<<img.rows;
+}
+
+void MainWindow::OnSocketReadyRead()
+{
+    QByteArray bytes = NULL;
+    while(tcpSocket->waitForReadyRead())
+    {
+        bytes.append((QByteArray)tcpSocket->readAll());
+    }
+    memcpy(imgBuffer,bytes,bytes.length());
+
+    qDebug()<<"数据长度:"<<bytes.length();
+    cv::Mat dst(cv::Size(W,H),CV_8UC3);
+    uchar*pData=imgBuffer;
+    vector<uchar>data;
+    for(int i=0;i<bytes.length();++i)
+    {
+        data.push_back(pData[i]);
+    }
+    dst = cv::imdecode(data,1);
+    //cv::flip(dst,dst,-1);
+//    for(int i=0;i<H;++i)
+//    {
+//        uchar*data=dst.ptr<uchar>(i);
+//        uchar*pBuf=imgBuffer + (H-1-i)*W*3;
+//        memcpy(data,pBuf,W*3);
+//    }
+    //cv::cvtColor(dst,dst,COLOR_RGB2BGR);
+    img = dst;
+    cv::imshow("img",img);
 }
 
 

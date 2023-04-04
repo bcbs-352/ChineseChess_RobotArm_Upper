@@ -10,7 +10,9 @@
 #include "QGamepad"
 #include "QFileDialog"
 #include "QMessageBox"
+#include <QTcpSocket>
 #include "opencv.hpp"
+#include "imgcodecs/imgcodecs.hpp"
 
 
 QT_BEGIN_NAMESPACE
@@ -34,6 +36,9 @@ private:
 
     QGamepad gamePad;
 
+    QTcpSocket *tcpSocket;
+    uchar imgBuffer[1280*720];
+
 private slots:
     void GetSerialPort();
     void OpenSerialPort();
@@ -41,5 +46,6 @@ private slots:
     void GetSerialPortMessage();
 
     void ReadImgFile();
+    void OnSocketReadyRead();
 };
 #endif // MAINWINDOW_H
