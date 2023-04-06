@@ -105,7 +105,7 @@ void GetContourCorner(Point2f nearPoints[],Point2f rectPoints[],vector<Point> co
 void DrawHoughLine(Mat &img)
 {
     vector<Vec4f> lines;
-    HoughLinesP(img,lines,5,CV_PI/180,3,5,30);
+    HoughLinesP(img,lines,5,CV_PI/180,3,200,20);
     for(size_t i=0;i<lines.size();++i)
     {
         Vec4f l=lines[i];
@@ -218,7 +218,7 @@ Mat ImgProcessing::SplitChessBoard(const Mat &inImg)
     GetContourCorner(nearPoints,vertices,contours[maxAreaIndex]);
     for (int k = 0; k < 4; ++k)
     {
-        line(out, nearPoints[k], nearPoints[(k + 1) % 4], Scalar(0, 0, 255),1);
+        line(out, nearPoints[k], nearPoints[(k + 1) % 4], Scalar(0, 0, 255),3);
     }
 
     // 计算目标矩形坐标点
@@ -246,7 +246,7 @@ Mat ImgProcessing::SplitChessBoard(const Mat &inImg)
     qDebug()<<"裁切区域:左上("<<rectPoints[0].x<<","<<rectPoints[0].y<<");右下("<<rectPoints[2].x<<","<<rectPoints[2].y<<")";
     Mat cutImg=transformImg(Rect(rectPoints[0]-Point2f(width*0.05,height*0.05),rectPoints[2]+Point2f(width*0.05,height*0.05)));
     //Mat cutImg=transformImg(Rect(rectPoints[0],rectPoints[2]));
-    //imshow("cut img",cutImg);
+    imshow("cut img",cutImg);
 
     /*
     // 绘制所有矩形
@@ -434,7 +434,7 @@ vector<int> ImgProcessing::ClassifyChessImg(const vector<Mat> &chessImgs)
         int index = 0;
         for(int i=0;i<output.cols;++i)
         {
-            qDebug()<<output.at<float>(0,i);
+            //qDebug()<<output.at<float>(0,i);
             if(output.at<float>(0,i) > maxVal)
             {
                 maxVal = output.at<float>(0,i);
@@ -501,5 +501,33 @@ vector<vector<int> > ImgProcessing::MainFunc(const Mat &inImg)
     return gridInfo;
 }
 
+vector<int> tmp(const vector<Mat> chessImgs)
+{
+    vector<int> chessCategories; Mat dst;
+    vector<string> chess_list = {"黑士", "红仕", "黑象", "红相", "黑炮", "红炮", "黑将",\
+                                 "红帅", "黑马", "红马", "黑卒", "红兵", "黑車", "红車"};
+    dnn::Net net = dnn::readNetFromONNX("C:\\Users\\asus\\Desktop\\ChessDataset\\myModel_tmp.onnx");
+    net.setPreferableBackend(dnn::DNN_BACKEND_CUDA); net.setPreferableTarget(dnn::DNN_TARGET_CUDA);
+
+    for(const Mat &img : chessImgs)
+    {
+        resize(img,dst,Size(H,W),INTER_CUBIC);
+        auto blob = dnn::blobFromImage(dst, 2./255, Size(H, W), Scalar(127, 127, 127), true, false);
+        net.setInput(blob,"input");
+        Mat output = net.forward("output");
+
+        float maxVal = -1e37; int index = -1;
+        for(int i=0;i<output.cols;++i)
+        {
+            if(output.at<float>(0,i) > maxVal)
+            {
+                maxVal = output.at<float>(0,i);
+                index = i;
+            }
+        }
+        chessCategories.push_back(index);
+    }
+    return chessCategories;
+}
 
 

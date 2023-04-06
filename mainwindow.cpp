@@ -53,6 +53,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btn_test_img,&QPushButton::clicked,this,[=](){
         //ImgProcessing::SplitChessBoard(img);
         ImgProcessing::MainFunc(img);
+        cv::Mat cutImg = ImgProcessing::SplitChessBoard(img);
+
+        QPixmap qPixmap(ui->label_origin_img->size());
+        qPixmap.convertFromImage(ImgProcessing::Mat2QImage(cutImg));
+
+        ui->label_origin_img->setPixmap(qPixmap.scaled(ui->label_origin_img->size()));
     });
 }
 
@@ -144,20 +150,18 @@ void MainWindow::ReadImgFile()
 void MainWindow::OnSocketReadyRead()
 {
     QByteArray bytes = NULL;
-    while(tcpSocket->waitForReadyRead())
+    while(bytes.length() ==0)
     {
-        bytes.append((QByteArray)tcpSocket->readAll());
+        while(tcpSocket->waitForReadyRead(300))
+        {
+            bytes.append((QByteArray)tcpSocket->readAll());
+        }
+        memcpy(imgBuffer,bytes,bytes.length());
+        qDebug()<<"数据长度:"<<bytes.length();
     }
-    memcpy(imgBuffer,bytes,bytes.length());
 
-    qDebug()<<"数据长度:"<<bytes.length();
+    vector<uchar>data(imgBuffer,imgBuffer+bytes.length());
     cv::Mat dst(cv::Size(W,H),CV_8UC3);
-    uchar*pData=imgBuffer;
-    vector<uchar>data;
-    for(int i=0;i<bytes.length();++i)
-    {
-        data.push_back(pData[i]);
-    }
     dst = cv::imdecode(data,1);
     //cv::flip(dst,dst,-1);
 //    for(int i=0;i<H;++i)

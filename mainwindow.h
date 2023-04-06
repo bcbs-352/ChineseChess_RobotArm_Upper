@@ -13,6 +13,7 @@
 #include <QTcpSocket>
 #include "opencv.hpp"
 #include "imgcodecs/imgcodecs.hpp"
+#include "QElapsedTimer"
 
 
 QT_BEGIN_NAMESPACE
