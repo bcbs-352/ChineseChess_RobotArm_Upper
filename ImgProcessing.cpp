@@ -11,34 +11,34 @@ QImage ImgProcessing::Mat2QImage(const Mat &img)
 {
     switch(img.type())
     {
-        case CV_8UC1:
+    case CV_8UC1:
+    {
+        QImage image(img.cols,img.rows,QImage::Format_Indexed8);
+        image.setColorCount(256);
+        for(int i=0;i<256;++i)
+            image.setColor(i,qRgb(i,i,i));
+        uchar*pSrc=img.data;
+        for(int row=0;row<img.rows;++row)
         {
-            QImage image(img.cols,img.rows,QImage::Format_Indexed8);
-            image.setColorCount(256);
-            for(int i=0;i<256;++i)
-                image.setColor(i,qRgb(i,i,i));
-            uchar*pSrc=img.data;
-            for(int row=0;row<img.rows;++row)
-            {
-                uchar*pDest= image.scanLine(row);
-                memcpy(pDest,pSrc,img.cols);
-                pSrc+=img.step;
-            }
-            return image;
+            uchar*pDest= image.scanLine(row);
+            memcpy(pDest,pSrc,img.cols);
+            pSrc+=img.step;
         }
-        case CV_8UC3:
-        {
-            cvtColor(img,img,COLOR_BGR2RGB);
-            const uchar*pSrc=(const uchar*)img.data;
-            QImage image(pSrc,img.cols,img.rows,img.step,QImage::Format_RGB888);
-            return image.copy();
-        }
-        case CV_8UC4:
-        {
-            const uchar*pSrc=(const uchar*)img.data;
-            QImage image(pSrc,img.cols,img.rows,img.step,QImage::Format_ARGB32);
-            return image.copy();
-        }
+        return image;
+    }
+    case CV_8UC3:
+    {
+        cvtColor(img,img,COLOR_BGR2RGB);
+        const uchar*pSrc=(const uchar*)img.data;
+        QImage image(pSrc,img.cols,img.rows,img.step,QImage::Format_RGB888);
+        return image.copy();
+    }
+    case CV_8UC4:
+    {
+        const uchar*pSrc=(const uchar*)img.data;
+        QImage image(pSrc,img.cols,img.rows,img.step,QImage::Format_ARGB32);
+        return image.copy();
+    }
     default:
         qDebug()<<"无法转换为QImage";
         return QImage();
@@ -115,7 +115,7 @@ void DrawHoughLine(Mat &img)
 }
 
 // 分割图像中棋盘区域    预处理、边缘检测、四边形轮廓拟合、透视变换   参考Vaccae
-Mat ImgProcessing::SplitChessBoard(const Mat &inImg)
+Mat ImgProcessing::SplitChessBoard(const Mat &inImg, vector<double>cannyParams)
 {
     Mat img,out;
     inImg.copyTo(img);
@@ -135,12 +135,13 @@ Mat ImgProcessing::SplitChessBoard(const Mat &inImg)
     // <del>直方图均衡化</del> 大津法获取分割阈值，Canny算子边缘检测
     int threshold;
     //equalizeHist(channels[0],channels[0]);
+
     threshold=CalcMatOTSU(channels[0]);
-    Canny(channels[0],B_img,threshold/2,saturate_cast<uchar>(1.3*threshold));
+    Canny(channels[0],B_img,threshold*cannyParams[0],saturate_cast<uchar>(cannyParams[1]*threshold));
     threshold=CalcMatOTSU(channels[1]);
-    Canny(channels[1],G_img,threshold/2,saturate_cast<uchar>(1.3*threshold));
+    Canny(channels[1],G_img,threshold*cannyParams[0],saturate_cast<uchar>(cannyParams[1]*threshold));
     threshold=CalcMatOTSU(channels[2]);
-    Canny(channels[2],R_img,threshold/2,saturate_cast<uchar>(1.3*threshold));
+    Canny(channels[2],R_img,threshold*cannyParams[0],saturate_cast<uchar>(cannyParams[1]*threshold));
 
     threshold=CalcMatOTSU(gray_img);
     Canny(gray_img,gray_img,threshold/2,saturate_cast<uchar>(1.3*threshold));
@@ -197,10 +198,14 @@ Mat ImgProcessing::SplitChessBoard(const Mat &inImg)
             maxArea=rotateRect.size.area();
             maxAreaIndex=i;
         }
-
     }
     qDebug()<<contours.size();
     qDebug()<<maxAreaIndex<<"  "<<maxArea;
+    if(maxArea <= 0)
+    {
+        qDebug() << "找不到四边形";
+        return img;
+    }
 
     //Mat imgContour = Mat::zeros(sumImg.size(),CV_8SC3);
 
@@ -240,12 +245,23 @@ Mat ImgProcessing::SplitChessBoard(const Mat &inImg)
     Mat transformImg;
     Mat transformMat=getPerspectiveTransform(nearPoints,rectPoints);
     warpPerspective(img,transformImg,transformMat,transformImg.size(),INTER_LINEAR);
-    //imshow("perspect img",transformImg);
+    imshow("perspect img",transformImg);
 
     // 裁切棋盘图像
+    float ratio=0.05;
+
+    if(rectPoints[0].x<0 || rectPoints[0].y<0 || rectPoints[2].x>img.cols || rectPoints[2].y>img.rows)
+        return img;
+    if(rectPoints[0].y - height*ratio <= 0 || rectPoints[2].y + height*ratio >= transformImg.rows)
+    {
+        qDebug() << "裁剪区域越界";
+        return img;
+    }
     qDebug()<<"裁切区域:左上("<<rectPoints[0].x<<","<<rectPoints[0].y<<");右下("<<rectPoints[2].x<<","<<rectPoints[2].y<<")";
-    Mat cutImg=transformImg(Rect(rectPoints[0]-Point2f(width*0.05,height*0.05),rectPoints[2]+Point2f(width*0.05,height*0.05)));
+    Mat cutImg=transformImg(Rect(rectPoints[0]-Point2f(width*ratio,height*ratio),rectPoints[2]+Point2f(width*ratio,height*ratio)));
     //Mat cutImg=transformImg(Rect(rectPoints[0],rectPoints[2]));
+    if(cutImg.empty() || cutImg.cols*cutImg.rows<0.25*img.cols*img.rows)
+        return img;
     imshow("cut img",cutImg);
 
     /*
@@ -321,7 +337,7 @@ int ImgProcessing::CalcMatOTSU(Mat &img)
 }
 
 // 对图像进行霍夫圆检测，返回检测到的circles列表
-vector<Vec3f> ImgProcessing::GetCirclesPos(const Mat &img)
+vector<Vec3f> ImgProcessing::GetCirclesPos(const Mat &img, vector<double> &houghParams)
 {
     // 预处理:滤波(中值/高斯),转为灰度图,获取分割阈值
     vector<Vec3f> circles;
@@ -332,13 +348,13 @@ vector<Vec3f> ImgProcessing::GetCirclesPos(const Mat &img)
 
     int threshold=CalcMatOTSU(tmp_gray);
 
-    double dp=2,minDist=20;
-    double param=80; // 检测阶段圆心的累加器阈值。值越小，越可以检测到更多不存在的圆
-    int minRadius=10,maxRadius=30;
+    double dp=houghParams[0],minDist=houghParams[1];
+    double param=houghParams[2]; // 检测阶段圆心的累加器阈值。值越小，越可以检测到更多不存在的圆
+    int minRadius=houghParams[3],maxRadius=houghParams[4];
     //do{
-        circles.clear();
-        HoughCircles(tmp_gray,circles,HOUGH_GRADIENT,dp,minDist,threshold,param,minRadius,maxRadius);
-        qDebug()<<circles.size()<<"param:"<<param;
+    circles.clear();
+    HoughCircles(tmp_gray,circles,HOUGH_GRADIENT,dp,minDist,threshold,param,minRadius,maxRadius);
+    qDebug()<<circles.size()<<"param:"<<param;
     //}while(circles.size()>32);
 
     for(size_t i=0;i<circles.size();++i)
@@ -410,7 +426,7 @@ vector<int> ImgProcessing::ClassifyChessImg(const vector<Mat> &chessImgs)
 {
     vector<string> chess_list = {"黑士", "红仕", "黑象", "红相", "黑炮", "红炮", "黑将", "红帅", "黑马", "红马", "黑卒", "红兵", "黑車", "红車"};
 
-    dnn::Net net = dnn::readNetFromONNX("C:\\Users\\asus\\Desktop\\ChessDataset\\myModel_new.onnx");
+    dnn::Net net = dnn::readNetFromONNX("C:\\Users\\asus\\Desktop\\ChessDataset\\model_3.onnx");
     dnn::dnn4_v20220524::ClassificationModel cnn_model(net);
     cnn_model.setInputParams(1,Size(H,W),Scalar(0,0,0),true,false);
 
@@ -442,7 +458,7 @@ vector<int> ImgProcessing::ClassifyChessImg(const vector<Mat> &chessImgs)
             }
         }
 
-        float confs;
+        //float confs;
         //cnn_model.classify(dst,index,confs);
         //qDebug()<<"当前棋子:" << QString::fromStdString(chess_list[index])<<"confs:"<<confs;
 
@@ -463,7 +479,7 @@ vector<vector<int>> ImgProcessing::GetGridInfo(const vector<Point2f> &coordinate
         return gridInfo;
     for(size_t i=0;i<chessCategories.size();++i)
     {
-        gridInfo[coordinates[i].x][coordinates[i].y]=chessCategories[i];
+        gridInfo[coordinates[i].y][coordinates[i].x]=chessCategories[i];
         qDebug()<<i<<"棋种:"<<QString::fromStdString(chess_list[chessCategories[i]])<<" 坐标("<<coordinates[i].x<<","<<coordinates[i].y<<")";
     }
     return gridInfo;
@@ -482,12 +498,13 @@ void WriteChess(const Mat &inImg, vector<Vec3f> &circlesPos, vector<int> &chessC
 }
 
 // 主函数
-vector<vector<int> > ImgProcessing::MainFunc(const Mat &inImg)
+vector<vector<int> > ImgProcessing::MainFunc(const Mat &inImg, vector<double> &cannyParams, vector<double> &houghParams)
 {
+    destroyAllWindows();
     // 分割棋盘区域(周围扩大5%)
-    Mat cutImg = SplitChessBoard(inImg);
+    Mat cutImg = SplitChessBoard(inImg, cannyParams);
     // 霍夫曼圆检测
-    vector<Vec3f> circlesPos = GetCirclesPos(cutImg);
+    vector<Vec3f> circlesPos = GetCirclesPos(cutImg, houghParams);
     // 截取棋子图像
     vector<Mat> chessImgs = GetChessImg(cutImg,circlesPos);
     // 获取棋子对应的着点坐标
@@ -501,12 +518,44 @@ vector<vector<int> > ImgProcessing::MainFunc(const Mat &inImg)
     return gridInfo;
 }
 
+// 根据格点信息获取fen串
+QString ImgProcessing::GetFenStr(vector<vector<int> > gridInfo)
+{
+    if(gridInfo.empty() || gridInfo.size()!=10 || gridInfo[0].size()!=9)
+        return NULL;
+    vector<QString> chess_char = {"a", "A", "b", "B", "c", "C", "k", "K", "n", "N", "p", "P", "r", "R"};
+    QString fen="";
+    for(size_t i=0;i<gridInfo.size();++i)
+    {
+        int count=0;
+        for(size_t j=0;j<gridInfo[0].size();++j)
+        {
+            if(gridInfo[i][j] == -1)
+            {
+                ++count;
+                continue;
+            }
+            if(count!=0)
+            {
+                fen+=QString::number(count);
+                count=0;
+            }
+            fen+=chess_char[gridInfo[i][j]];
+        }
+        if(count!=0)
+            fen+=QString::number(count);
+        if(i<gridInfo.size()-1)
+            fen+="/";
+    }
+    return fen;
+}
+
 vector<int> tmp(const vector<Mat> chessImgs)
 {
     vector<int> chessCategories; Mat dst;
     vector<string> chess_list = {"黑士", "红仕", "黑象", "红相", "黑炮", "红炮", "黑将",\
                                  "红帅", "黑马", "红马", "黑卒", "红兵", "黑車", "红車"};
-    dnn::Net net = dnn::readNetFromONNX("C:\\Users\\asus\\Desktop\\ChessDataset\\myModel_tmp.onnx");
+    dnn::Net net = dnn::readNetFromONNX("C:\\Users\\asus\\Desktop\\ChessDataset\\model.onnx");
     net.setPreferableBackend(dnn::DNN_BACKEND_CUDA); net.setPreferableTarget(dnn::DNN_TARGET_CUDA);
 
     for(const Mat &img : chessImgs)

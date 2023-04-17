@@ -14,9 +14,9 @@ public:
 
     static int CalcMatOTSU(Mat &img);
 
-    static Mat SplitChessBoard(const Mat &img);
+    static Mat SplitChessBoard(const Mat &img, vector<double>cannyParams);
 
-    static vector<Vec3f> GetCirclesPos(const Mat &img);
+    static vector<Vec3f> GetCirclesPos(const Mat &img, vector<double> &houghParams);
 
     static vector<Mat> GetChessImg(const Mat &img, vector<Vec3f> &circles);
 
@@ -26,7 +26,9 @@ public:
 
     static vector<vector<int>> GetGridInfo(const vector<Point2f> &coordinates, const vector<int> &chessCategories);
 
-    static vector<vector<int>> MainFunc(const Mat &inImg);
+    static vector<vector<int>> MainFunc(const Mat &inImg, vector<double> &cannyParams, vector<double> &houghParams);
+
+    static QString GetFenStr(vector<vector<int>> gridInfo);
 
     //static vector<string> chess_list;
 };

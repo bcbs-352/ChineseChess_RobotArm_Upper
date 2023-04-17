@@ -1,6 +1,7 @@
 ﻿#include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "SerialController.h"
+#include <QProcess>
 
 #define H 720
 #define W 1280
@@ -52,14 +53,44 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->btn_select_img_path,&QPushButton::clicked,this,&MainWindow::ReadImgFile);
     connect(ui->btn_test_img,&QPushButton::clicked,this,[=](){
         //ImgProcessing::SplitChessBoard(img);
-        ImgProcessing::MainFunc(img);
-        cv::Mat cutImg = ImgProcessing::SplitChessBoard(img);
+        // 传入变量
+        vector<double> cannyParams = {ui->SpinBox_min_canny->value(), ui->SpinBox_max_canny->value()};
+        vector<double> houghCircleParams = {ui->SpinBox_bp->value(), ui->SpinBox_min_Dist->value(), ui->SpinBox_circle_threshold->value(),
+                                            ui->SpinBox_min_R->value(), ui->SpinBox_max_R->value()};
+        vector<vector<int>> gridInfo = ImgProcessing::MainFunc(img, cannyParams, houghCircleParams);
+
+        cv::Mat cutImg = ImgProcessing::SplitChessBoard(img, cannyParams);
 
         QPixmap qPixmap(ui->label_origin_img->size());
         qPixmap.convertFromImage(ImgProcessing::Mat2QImage(cutImg));
 
         ui->label_origin_img->setPixmap(qPixmap.scaled(ui->label_origin_img->size()));
+
+        qDebug() << "fen串:" <<ImgProcessing::GetFenStr(gridInfo);
     });
+    // 摄像头开关
+    updateTimer = new QTimer(this);
+    connect(ui->btn_open_cam,&QPushButton::clicked,this,[&](){
+        cap.open(2);
+        updateTimer->start(30);
+        cameraShow=true;
+
+        cap.set(cv::CAP_PROP_FRAME_WIDTH,W);
+        cap.set(cv::CAP_PROP_FRAME_HEIGHT,H);
+        cap >> img;
+        qDebug() << "打开摄像头,分辨率" << img.cols << "x" << img.rows;
+    });
+    connect(ui->btn_close_cam,&QPushButton::clicked,this,[&](){
+        cap.release();
+        updateTimer->stop();
+        cameraShow=false;
+    });
+    connect(updateTimer,&QTimer::timeout,this,&MainWindow::CameraUpdate);
+
+    // 象棋引擎相关绑定
+    connect(ui->btn_select_exe_path,&QPushButton::clicked,this,&MainWindow::SelectExeFile);
+    connect(ui->btn_start_exe,&QPushButton::clicked,this,&MainWindow::StartExeProcess);
+    connect(ui->btn_send_exe,&QPushButton::clicked,this,&MainWindow::SendExeCommand);
 }
 
 MainWindow::~MainWindow()
@@ -144,20 +175,22 @@ void MainWindow::ReadImgFile()
     ui->label_origin_img->setPixmap(qPixmap.scaled(ui->label_origin_img->size()));
 
     img = cv::imread(imgPath.toStdString());
+    cv::resize(img,img,cv::Size(1280,720));
+    cv::imshow("720p",img);
     qDebug()<<"图像尺寸"<<img.cols<<"×"<<img.rows;
 }
 
 void MainWindow::OnSocketReadyRead()
 {
     QByteArray bytes = NULL;
-    while(bytes.length() ==0)
+    while(bytes.length() == 0)
     {
         while(tcpSocket->waitForReadyRead(300))
         {
             bytes.append((QByteArray)tcpSocket->readAll());
         }
         memcpy(imgBuffer,bytes,bytes.length());
-        qDebug()<<"数据长度:"<<bytes.length();
+        qDebug() << "数据长度:" << bytes.length();
     }
 
     vector<uchar>data(imgBuffer,imgBuffer+bytes.length());
@@ -173,6 +206,73 @@ void MainWindow::OnSocketReadyRead()
     //cv::cvtColor(dst,dst,COLOR_RGB2BGR);
     img = dst;
     cv::imshow("img",img);
+}
+
+void MainWindow::SelectExeFile()
+{
+    QString exePath = QFileDialog::getOpenFileName(this,"选择象棋引擎","C:/Users/asus/Desktop",tr("exec(*.exe)"));
+    qDebug() << "打开文件" << exePath;
+    ui->lineEdit_exe_path->setText(exePath);
+    if(exePath.isEmpty())
+    {
+        QMessageBox::warning(this,"Attention","图像路径错误",QMessageBox::Yes);
+        return;
+    }
+}
+
+void MainWindow::StartExeProcess()
+{
+    process = new QProcess();
+    QString exePath = ui->lineEdit_exe_path->text();
+
+    connect(process,&QProcess::readyReadStandardOutput,this,[=](){
+        qDebug() << process->readAllStandardOutput();
+    });
+
+    connect(process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), [=](int exitCode, QProcess::ExitStatus exitStatus)
+    {
+        qDebug() << "process finish." << exitCode << exitStatus;
+    });
+
+
+//    process->setCreateProcessArgumentsModifier([this](QProcess::CreateProcessArguments * args)
+//    {
+//        //下面这两行让后台exe弹出一个窗口
+//        args->flags |=  CREATE_NEW_CONSOLE;
+//        args->flags &= ~CREATE_NO_WINDOW;
+//    });
+
+
+    process->start(exePath);
+//  process->start("cmd.exe");
+//  process->write(exePath.toLocal8Bit());
+    qDebug() << "process ID:" << process->processId();
+}
+
+void MainWindow::SendExeCommand()
+{
+    QString msg = ui->lineEdit_send_exe->text();
+    ui->lineEdit_send_exe->clear();
+    if(!process->isWritable())
+    {
+        qDebug() << "无法发送指令";
+        return;
+    }
+    qDebug() << "发送指令:" << msg;
+    process->write((msg+"\r\n").toLocal8Bit());
+}
+
+// 摄像头定时器调用,刷新并显示图像
+void MainWindow::CameraUpdate()
+{
+    cap >> img;
+    cv::Mat contourImg = img.clone();
+    //cv::cvtColor(img,img,COLOR_BGR2RGB);
+    cv::Rect rect(W/2-H*9/22,H/11,H*9/11,H*9/11);
+    cv::rectangle(contourImg,rect,cv::Scalar(0,0,255),2);
+    QPixmap qPixmap(ui->label_origin_img->size());
+    qPixmap.convertFromImage(ImgProcessing::Mat2QImage(contourImg));
+    ui->label_origin_img->setPixmap(qPixmap.scaled(ui->label_origin_img->size()));
 }
 
 

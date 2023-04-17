@@ -14,7 +14,8 @@
 #include "opencv.hpp"
 #include "imgcodecs/imgcodecs.hpp"
 #include "QElapsedTimer"
-
+#include <QProcess>
+#include <QTimer>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -32,13 +33,19 @@ public:
 
 private:
     Ui::MainWindow *ui;
-    QSerialPort*my_serial;
+    QSerialPort *my_serial;
     cv::Mat img;
 
     QGamepad gamePad;
 
     QTcpSocket *tcpSocket;
     uchar imgBuffer[1280*720];
+
+    QProcess *process;
+
+    bool cameraShow;
+    cv::VideoCapture cap;
+    QTimer *updateTimer;
 
 private slots:
     void GetSerialPort();
@@ -48,5 +55,11 @@ private slots:
 
     void ReadImgFile();
     void OnSocketReadyRead();
+
+    void SelectExeFile();
+    void StartExeProcess();
+    void SendExeCommand();
+
+    void CameraUpdate();
 };
 #endif // MAINWINDOW_H
