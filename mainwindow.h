@@ -16,6 +16,7 @@
 #include "QElapsedTimer"
 #include <QProcess>
 #include <QTimer>
+#include <QLoggingCategory>
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -29,21 +30,26 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    void SendSerialPortMessage(QByteArray);  //char*);
-
+    void SendSerialPortMessageHex(QByteArray);
+    void SendSerialPortMessage(QByteArray);
+    void Sleep(int msec);
+    void TestFunc();
 private:
     Ui::MainWindow *ui;
     QSerialPort *my_serial;
     cv::Mat img;
 
-    QGamepad gamePad;
+
+    QGamepad *gamePad;
+    QTimer *armSyncTimer;
+    cv::Vec3f curPos, curStep, deltaPos;
 
     QTcpSocket *tcpSocket;
     uchar imgBuffer[1280*720];
 
     QProcess *process;
 
-    bool cameraShow;
+    bool cameraShow = false;
     cv::VideoCapture cap;
     QTimer *updateTimer;
 
@@ -61,5 +67,14 @@ private slots:
     void SendExeCommand();
 
     void CameraUpdate();
+    void ModifyCamera();
+
+    void ConnectController();
+    void ConnectArm();
+    void UpdateArmStep();
+    void SetArmPos();
+    void SetValveStatus();
+
+    void ArmTaskFlow();
 };
 #endif // MAINWINDOW_H

@@ -5,6 +5,12 @@ using namespace cv;
 using namespace std;
 
 const int H=32,W=32;
+const float paddingRatio = 0.05;
+
+Vec2f ImgProcessing::boardSize;
+vector<vector<int>> ImgProcessing::gridInfo;
+vector<Vec2f> ImgProcessing::chessPos;
+vector<vector<Vec2f>> ImgProcessing::gridPos(10), ImgProcessing::gridLocation(10), ImgProcessing::gridChessPos(10), ImgProcessing::gridChessLocation(10);
 
 // Mat格式的图像转为QImage格式
 QImage ImgProcessing::Mat2QImage(const Mat &img)
@@ -258,6 +264,7 @@ Mat ImgProcessing::SplitChessBoard(const Mat &inImg, vector<double>cannyParams)
         return img;
     }
     qDebug()<<"裁切区域:左上("<<rectPoints[0].x<<","<<rectPoints[0].y<<");右下("<<rectPoints[2].x<<","<<rectPoints[2].y<<")";
+    boardSize = Vec2f(width,height);
     Mat cutImg=transformImg(Rect(rectPoints[0]-Point2f(width*ratio,height*ratio),rectPoints[2]+Point2f(width*ratio,height*ratio)));
     //Mat cutImg=transformImg(Rect(rectPoints[0],rectPoints[2]));
     if(cutImg.empty() || cutImg.cols*cutImg.rows<0.25*img.cols*img.rows)
@@ -356,11 +363,14 @@ vector<Vec3f> ImgProcessing::GetCirclesPos(const Mat &img, vector<double> &hough
     HoughCircles(tmp_gray,circles,HOUGH_GRADIENT,dp,minDist,threshold,param,minRadius,maxRadius);
     qDebug()<<circles.size()<<"param:"<<param;
     //}while(circles.size()>32);
+    ImgProcessing::chessPos.resize(circles.size());
 
+    // 绘制检测到的圆形，记录圆心在棋盘区域的像素坐标
     for(size_t i=0;i<circles.size();++i)
     {
         circle(tmp,Point(circles[i][0],circles[i][1]),circles[i][2],Scalar(0,255,0),2,8);
         circle(tmp,Point(circles[i][0],circles[i][1]),10,Scalar(0,255,0),-1,8);
+        chessPos[i] = Vec2f(circles[i][0],circles[i][1])-paddingRatio*boardSize;
     }
     imshow("Hough Circle",tmp);
 
@@ -398,7 +408,8 @@ vector<Point2f> ImgProcessing::GetChessCoordinate(const Mat &broadImg, vector<Ve
     int up = broadImg.rows * (1-Hratio)/2, left = broadImg.cols * (1-Wratio)/2;
     int gridHeight = height/9, gridWidth = width/8;
 
-    // 绘制网格图
+
+    // 绘制网格图, 记录格点在棋盘区域的像素坐标
     Mat img = broadImg.clone();
     for(int i=0;i<10;++i)
     {
@@ -407,6 +418,14 @@ vector<Point2f> ImgProcessing::GetChessCoordinate(const Mat &broadImg, vector<Ve
         // 纵线
         if(i<9)
             line(img,Point(left+gridWidth*i,up),Point(left+gridWidth*i,up+height),Scalar(255,255,255),1,LINE_AA);
+
+        vector<Vec2f> pos(9);
+        for(int j=0;j<9;++j)
+        {
+            pos[j] = Vec2f(left+gridWidth*j,up+gridHeight*i)-paddingRatio*boardSize;
+            qDebug()<<"网格坐标("<<i<<","<<j<<"), 像素坐标("<<pos[j][0]<<","<<pos[j][1]<<")";
+        }
+        ImgProcessing::gridPos[i] = pos;
     }
     imshow("grid img",img);
 
@@ -426,7 +445,7 @@ vector<int> ImgProcessing::ClassifyChessImg(const vector<Mat> &chessImgs)
 {
     vector<string> chess_list = {"黑士", "红仕", "黑象", "红相", "黑炮", "红炮", "黑将", "红帅", "黑马", "红马", "黑卒", "红兵", "黑車", "红車"};
 
-    dnn::Net net = dnn::readNetFromONNX("C:\\Users\\asus\\Desktop\\ChessDataset\\model_3.onnx");
+    dnn::Net net = dnn::readNetFromONNX("C:\\Users\\asus\\Desktop\\ChessDataset\\model_v4.onnx");
     dnn::dnn4_v20220524::ClassificationModel cnn_model(net);
     cnn_model.setInputParams(1,Size(H,W),Scalar(0,0,0),true,false);
 
@@ -475,12 +494,15 @@ vector<vector<int>> ImgProcessing::GetGridInfo(const vector<Point2f> &coordinate
 {
     vector<string> chess_list = {"黑士", "红仕", "黑象", "红相", "黑炮", "红炮", "黑将", "红帅", "黑马", "红马", "黑卒", "红兵", "黑車", "红車"};
     vector<vector<int>> gridInfo(10,vector<int>(9,-1));
+    gridChessPos = vector<vector<Vec2f>>(10,vector<Vec2f>(9,Vec2f(-1,-1)));
+
     if(coordinates.size()!=chessCategories.size())
         return gridInfo;
     for(size_t i=0;i<chessCategories.size();++i)
     {
         gridInfo[coordinates[i].y][coordinates[i].x]=chessCategories[i];
-        qDebug()<<i<<"棋种:"<<QString::fromStdString(chess_list[chessCategories[i]])<<" 坐标("<<coordinates[i].x<<","<<coordinates[i].y<<")";
+        gridChessPos[coordinates[i].y][coordinates[i].x]=chessPos[i];
+        qDebug()<<i<<"棋种:"<<QString::fromStdString(chess_list[chessCategories[i]])<<" 着点坐标("<<coordinates[i].x<<","<<coordinates[i].y<<"), 像素坐标("<<chessPos[i][0]<<","<<chessPos[i][1]<<")";
     }
     return gridInfo;
 }
@@ -512,7 +534,7 @@ vector<vector<int> > ImgProcessing::MainFunc(const Mat &inImg, vector<double> &c
     // 对棋子分类,获得对应棋种索引
     vector<int> chessCategories = ClassifyChessImg(chessImgs);
     // 获取棋盘10x9个网格点状态
-    vector<vector<int>> gridInfo = GetGridInfo(coordinates,chessCategories);
+    gridInfo = GetGridInfo(coordinates,chessCategories);
 
     WriteChess(cutImg,circlesPos,chessCategories);
     return gridInfo;
@@ -550,7 +572,32 @@ QString ImgProcessing::GetFenStr(vector<vector<int> > gridInfo)
     return fen;
 }
 
-vector<int> tmp(const vector<Mat> chessImgs)
+float LinearInterpo(float value, float a0, float a1)
+{
+    return a0 + value*(a1-a0);
+}
+
+// 根据棋盘左上实际坐标和宽高, 插值计算检测到的棋子圆心和棋盘格点的实际坐标
+void ImgProcessing::CalsPos2Location(Vec2f leftUp, Vec2f rightUp, Vec2f rightDown)
+{
+    gridLocation = vector<vector<Vec2f>>(10,vector<Vec2f>(9,Vec2f(-1,-1)));
+    gridChessLocation = vector<vector<Vec2f>>(10,vector<Vec2f>(9,Vec2f(-1,-1)));
+    // grid__Pos都是在棋盘图像上的像素坐标
+    for(int i=0;i<10;++i)
+    {
+        for(int j=0;j<9;++j)
+        {
+            gridLocation[i][j] = leftUp + gridPos[i][j][0]/boardSize[0]*(rightUp-leftUp) + gridPos[i][j][1]/boardSize[1]*(rightDown-rightUp);
+            if(gridChessPos[i][j] != Vec2f(-1,-1))
+            {
+                gridChessLocation[i][j] = leftUp + gridChessPos[i][j][0]/boardSize[0]*(rightUp-leftUp) + gridChessPos[i][j][1]/boardSize[1]*(rightDown-rightUp);
+                qDebug() << "棋子坐标(" << i << "," << j << "), 实际坐标(" << gridChessLocation[i][j][0] << "," << gridChessLocation[i][j][1] << ")";
+            }
+        }
+    }
+}
+
+vector<int> Tmp(const vector<Mat> chessImgs)
 {
     vector<int> chessCategories; Mat dst;
     vector<string> chess_list = {"黑士", "红仕", "黑象", "红相", "黑炮", "红炮", "黑将",\

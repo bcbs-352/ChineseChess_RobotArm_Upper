@@ -6,6 +6,7 @@
 #include <QWidget>
 #include <QString>
 #include <QDebug>
+#include <opencv.hpp>
 
 
 class SerialController{
@@ -17,6 +18,7 @@ private :
     QSerialPort*my_serial;
 
 public:
+    //static cv::Vec3f curPos, curStep;
 
     static char Dec2Hex(uint8_t);
     static QString Str2Hex(const QByteArray&);
@@ -41,6 +43,9 @@ public:
     static QByteArray GetMotorPluse(int motorIndex);        // 33
     static QByteArray GetMotorEnable(int motorIndex);       // 3a
     static QByteArray GetMotorPosErr(int motorIndex);       // 39
+
+    static QByteArray SetArmRunToPosition(float x, float y, float z);
+    static QByteArray SetMotorRunToStep(float x, float y, float z);
 
     static void GetCHK(QByteArray&,int);
 };

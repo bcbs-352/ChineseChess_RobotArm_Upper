@@ -1,5 +1,11 @@
 ﻿#include "SerialController.h"
 
+#define PI 3.1415926535897932384626433832795
+#define RAG2DEG 180 / PI
+const float L1 = 212, L2 = 200, s = 8; // 主臂-L1, 副臂-L2, 丝杠螺距-s
+const float zStep = 100.f * 4 / 3;     // 200/8*4, z向移动1mm所需步数
+const float upperArmStep = 32.0f;      // 200/360*16*(72/20), 主臂转动1度所需步数
+const float foreArmStep = 51.77f;      // 200/360*16*(62/20)*(62/33), 副臂转动1度所需步数
 /*
 void SerialController::RefreshPort()
 {
@@ -65,6 +71,36 @@ QByteArray SerialController::SetMotorSubdiv(int motorIndex, int subdiv)
     ret[2]=static_cast<uint8_t>(subdiv);
     GetCHK(ret,len);
     return ret;
+}
+
+QByteArray SerialController::SetArmRunToPosition(float x, float y, float z)
+{
+    QString ret;
+    ret = "M2 X" + QString::number(x) + " Y" + QString::number(y) + " Z" + QString::number(z);
+    return ret.toUtf8();
+}
+
+QByteArray SerialController::SetMotorRunToStep(float x, float y, float z)
+{
+    QString ret;
+    float theta1, theta2, theta3;
+    float alpha = atan2(y, x);
+    float cosTheta2 = (x * x + y * y - L1 * L1 - L2 * L2) / (2 * L1 * L2);
+    float sinTheta2 = sqrt(1 - cosTheta2 * cosTheta2); // 逆时针为正
+
+    theta1 = alpha - atan2(L2 * sinTheta2, L1 + L2 * cosTheta2);
+    theta2 = atan2(sinTheta2, cosTheta2);
+    theta3 = 2 * PI * z / s;
+    if (isnan(theta1) || isnan(theta2) || isinf(theta1) || isinf(theta2))
+    {
+        qDebug() << "超出边界";
+        return ret.toUtf8();
+    }
+    int aStep = upperArmStep * theta1 * RAG2DEG;
+    int bStep = (theta1 * 33 / 62 + theta2) * foreArmStep * RAG2DEG; // 主臂转动θ度时，主臂与副臂之间的夹角会改变(逆时针方向θ*r1/r2)
+    int cStep = zStep * theta3;
+    ret = "M5 X" + QString::number(aStep) + " Y" + QString::number(bStep) + " Z" + QString::number(cStep);
+    return ret.toUtf8();
 }
 
 // 更新传入字符串校验位的值
